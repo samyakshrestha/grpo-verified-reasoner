@@ -1,16 +1,18 @@
-# GRPO Verified Reasoner
+# Post-Training Qwen3-4B-Base for Code Generation using GRPO (RLVR)
 
-Post-training Qwen3-4B-Base for code generation using distillation, supervised fine-tuning, and GRPO reinforcement learning with chain-of-thought reasoning and verified execution rewards.
+An end-to-end **RLVR (Reinforcement Learning with Verifiable Rewards)** pipeline that transforms **Qwen3-4B-Base** into a reasoning model using Chain-of-Thought distillation, **Unsloth-optimized LoRA**, and **GRPO**, achieving **79.9% Pass@1** on HumanEval (+27.5% over base).
 
 ## Results
 
 **79.9% pass@1 on HumanEval** with explicit reasoning (CoT). A 2.5% absolute improvement over SFT baseline and 27.5% over the base model.
 
-| Model | Pass@1 | Reasoning |
-|-------|--------|-----------|
-| Base (Qwen3-4B-Base) | 52.4% | No |
-| SFT (100 distilled examples) | 77.4% | CoT |
-| GRPO (378 MBPP+ tasks) | 79.9% | CoT |
+| Model | Pass@1 | Reasoning | Δ from Base |
+|-------|--------|-----------|-------------|
+| Base (Qwen3-4B-Base) | 52.4% | No | - |
+| SFT (100 distilled examples) | 77.4% | CoT | +25.0% |
+| GRPO (378 MBPP+ tasks) | 79.9% | CoT | +27.5% |
+
+> **Critical Discovery**: Merging LoRA adapters in float16 caused small GRPO updates (magnitude ~0.002) to underflow and vanish. Merging in float32 then downcasting preserved all RL refinements and enabled the final 2.5% gain.
 
 ## Overview
 
@@ -43,7 +45,7 @@ Output: SFT checkpoint achieving 77.4% pass@1.
 Train on 378 MBPP+ coding tasks using the TRL GRPOTrainer. Configuration:
 - Batch size: 4, Gradient accumulation: 1
 - Learning rate: 5e-6, Weight decay: 0.1, Optimizer: adamw_8bit
-- vLLM sampling: temperature=0.9, top_p=0.95, num_generations=8
+- vLLM sampling: temperature=0.9, top_p=0.95, num_generations=16
 - Epochs: 2, Total steps: 188
 
 Reward function combines three signals:
@@ -54,10 +56,6 @@ Reward function combines three signals:
 The correctness reward runs submitted code in a sandboxed subprocess with 2-second timeout, executing unit tests and returning the fraction of passing tests as the reward signal.
 
 ## Technical Notes
-
-### Precision and Model Merging
-
-A critical discovery: merging LoRA adapters in float16 caused small GRPO updates (magnitude ~0.002) to underflow and vanish. The solution is to merge in float32, then downcast to float16 for storage. This ensures small but statistically significant RL refinements are preserved in the final model.
 
 ### Schema Validation
 
@@ -135,11 +133,19 @@ print(response)
 
 ## Training Infrastructure
 
-Trained on Google Colab H100 80GB GPUs. The vLLM integration handles efficient batched generation during GRPO training. Training time: approximately 1.5 hours for 188 steps (2 epochs on 378 tasks).
-
-**vLLM Performance**: Batched inference evaluates all 164 HumanEval problems concurrently in under 2 minutes (vs. 1+ hour per model with sequential generation). This speedup is enabled by vLLM's PagedAttention algorithm for efficient KV cache management, continuous batching for dynamic request scheduling, and optimized CUDA kernels for attention computation.
+Trained on Google Colab H100 80GB GPUs with **Unsloth** optimization:
+- **Training time**: ~1.5 hours for 188 steps (2 epochs on 378 MBPP+ tasks)
+- **Speed**: 2x faster fine-tuning via optimized CUDA kernels and smart gradient offloading
+- **Memory**: Saved VRAM through optimized gradient checkpointing, enabling 16 generations/step for GRPO
+- **vLLM integration**: Batched generation of 16 responses per problem during RL rollouts
 
 **Training logs**: [WandB Run](https://wandb.ai/samyakshrestha-university-of-texas-at-dallas/mbpp-rl-project/runs/x0n9lpib)
+
+## Evaluation
+
+Models are evaluated on the HumanEval benchmark (164 coding problems) in both CoT and Non-CoT modes. 
+
+**vLLM Evaluation Performance: 164 problems in <2 minutes** (vs. 1+ hour with sequential generation). Batched inference processes all test cases concurrently, achieving **~30x speedup** through vLLM's PagedAttention algorithm for efficient KV cache management, continuous batching for dynamic request scheduling, and optimized CUDA kernels for attention computation.
 
 ## Tech Stack
 
@@ -156,7 +162,7 @@ Trained on Google Colab H100 80GB GPUs. The vLLM integration handles efficient b
 
 **Requirements**
 - Python 3.10+
-- CUDA-capable GPU (H100 recommended for training, T4+ for inference)
+- CUDA-capable GPU (H100 / A100 recommended for training, T4+ for inference)
 - 40GB+ VRAM for training, 16GB+ for inference
 
 ## File Structure
@@ -182,6 +188,6 @@ src/
   testing.py                        # Test execution utilities
 ```
 
-## License
+## Author
 
-Licensed under the MIT License. See LICENSE file for details.
+**Samyak Shrestha**

@@ -1,0 +1,23 @@
+# Core dependencies
+torch>=2.0.0
+transformers==4.56.2
+accelerate>=0.20.0
+
+# Training framework
+unsloth
+trl==0.22.2
+peft>=0.7.0
+bitsandbytes>=0.41.0
+
+# Inference
+vllm>=0.9.2
+
+# Evaluation and datasets
+evalplus
+datasets>=2.14.0
+
+# Experiment tracking
+wandb
+
+# Utilities
+numpy>=1.24.0
